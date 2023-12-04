@@ -3,9 +3,11 @@ const INPUT: &str = include_str!("input.txt");
 fn main() {
     let mut schematic: schematic::Schematic = INPUT.into();
     let partnumbers = schematic.calculate_partnumbers();
+    let gear_ratios = schematic.calculate_gear_rations();
 
     println!("{}", schematic);
     println!("Part numbers: {}", partnumbers);
+    println!("Gear ratios: {}", gear_ratios);
 }
 
 mod schematic {
@@ -16,7 +18,7 @@ mod schematic {
         fn from(input: &str) -> Self {
             let symbols: HashSet<char> = input.chars().filter(is_part_symbol).collect();
             let array = create_2d_array(input);
-            let mut counted_numbers = HashSet::new();
+            let counted_numbers = HashSet::new();
             Schematic {
                 array,
                 symbols,
@@ -65,6 +67,7 @@ mod schematic {
             self.array.get(p.y).and_then(|row| row.get(p.x))
         }
 
+        // Returns a list of the beginnings of all adjacent numbers to the given point
         fn get_adjacent_numbers(&self, p: &Point) -> Vec<Point> {
             let mut adjacent_numbers: Vec<Point> = Vec::new();
             for i in -1..=1 {
@@ -82,7 +85,11 @@ mod schematic {
                         };
                         if let Some(c) = self.get(&p) {
                             if c.is_numeric() {
-                                adjacent_numbers.push(p);
+                                let beginning_of_number = self.get_beginning_of_number(&p);
+                                if adjacent_numbers.contains(&beginning_of_number) {
+                                    continue;
+                                }
+                                adjacent_numbers.push(beginning_of_number);
                             }
                         }
                     }
@@ -135,24 +142,64 @@ mod schematic {
                         continue;
                     }
 
-                    println!("Found symbol at {:?}", p);
-
                     let adjacent_numbers = self.get_adjacent_numbers(&p);
-                    for adjecent_number in adjacent_numbers.iter() {
-                        let begginning = self.get_beginning_of_number(&adjecent_number);
-
+                    for adjecent_number in adjacent_numbers.into_iter() {
                         // Check if the number has already been counted
-                        if self.counted_numbers.contains(&begginning) {
+                        if self.counted_numbers.contains(&adjecent_number) {
                             continue;
                         }
 
-                        let number = self.get_number(&begginning);
+                        let number = self.get_number(&adjecent_number);
                         partnumbers += number;
-                        self.counted_numbers.insert(begginning);
+                        self.counted_numbers.insert(adjecent_number);
                     }
                 }
             }
             partnumbers
+        }
+
+        fn is_gear(&self, p: &Point) -> bool {
+            let c = self.get(&p).unwrap();
+            if *c != '*' {
+                return false;
+            }
+
+            let adjacent_numbers = self.get_adjacent_numbers(&p);
+            if adjacent_numbers.len() != 2 {
+                return false;
+            }
+
+            if self.get_beginning_of_number(&adjacent_numbers[0])
+                == self.get_beginning_of_number(&adjacent_numbers[1])
+            {
+                return false;
+            }
+
+            true
+        }
+
+        pub fn calculate_gear_rations(&self) -> u32 {
+            let mut gear_ratio_sum = 0;
+
+            self.array.iter().enumerate().for_each(|(y, row)| {
+                row.iter().enumerate().for_each(|(x, _)| {
+                    let p = Point { x: x, y: y };
+                    if !self.is_gear(&p) {
+                        return;
+                    }
+
+                    let adjacent_numbers = self.get_adjacent_numbers(&p);
+                    let mut gear_ratio = 1;
+                    for adjecent_number in adjacent_numbers.iter() {
+                        let number = self.get_number(&adjecent_number);
+                        gear_ratio *= number;
+                    }
+
+                    gear_ratio_sum += gear_ratio;
+                })
+            });
+
+            gear_ratio_sum
         }
     }
 
@@ -168,7 +215,11 @@ mod schematic {
                             write!(f, "{}", c.to_string().blue())?;
                         }
                     } else if self.symbols.contains(c) {
-                        write!(f, "{}", c.to_string().red())?;
+                        if self.is_gear(&Point { x: j, y: i }) {
+                            write!(f, "{}", c.to_string().yellow())?;
+                        } else {
+                            write!(f, "{}", c.to_string().red())?;
+                        }
                     } else {
                         write!(f, "{}", c)?;
                     }
@@ -275,6 +326,21 @@ mod schematic {
             let input = "1..#\n4...\n%*3.";
             let mut schematic: Schematic = input.into();
             assert_eq!(schematic.calculate_partnumbers(), 12);
+        }
+
+        #[test]
+        fn test_is_gear() {
+            let input = ".1..\n.*..\n1...";
+            let schematic: Schematic = input.into();
+            assert_eq!(schematic.is_gear(&Point { x: 1, y: 1 }), true);
+
+            let input = ".10.\n.*..\n1...";
+            let schematic: Schematic = input.into();
+            assert_eq!(schematic.is_gear(&Point { x: 1, y: 1 }), true);
+
+            let input = "....\n.*..\n1...";
+            let schematic: Schematic = input.into();
+            assert_eq!(schematic.is_gear(&Point { x: 1, y: 1 }), false);
         }
     }
 }
