@@ -1,25 +1,90 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 const INPUT: &str = include_str!("input.txt");
 
 fn main() {
-    let seeds = get_seeds(INPUT);
-    // println!("seeds: {:?}", seeds);
-
     let maps = create_maps(INPUT);
-    // println!("maps: {:?}", maps);
 
-    let locations: Vec<u64> = seeds
-        .iter()
-        .map(|seed| {
-            let mut mapped_value = *seed;
-            for map in &maps {
-                mapped_value = map.map(mapped_value);
-                // println!("mapped_value: {}", mapped_value);
-            }
-            mapped_value
-        })
+    let seeds = get_seeds(INPUT);
+    let locations: Vec<u64> = seeds.iter().map(|seed| map_seed(*seed, &maps)).collect();
+    println!(
+        "smallest location of seeds: {}",
+        locations.iter().min().unwrap()
+    );
+
+    let seed_ranges = get_seeds_as_ranges(INPUT);
+
+    let mut location = 0;
+    loop {
+        let seed = map_location(location, &maps);
+
+        let valid_seed = seed_ranges
+            .iter()
+            .any(|range| seed_exists_in_range(seed, range));
+
+        if valid_seed {
+            println!("smallest location: {location}");
+            println! {"seed: {seed}"};
+            break;
+        }
+
+        location += 1;
+    }
+}
+
+fn seed_exists_in_range(seed: u64, range: &(u64, u64)) -> bool {
+    seed >= range.0 && seed <= range.1
+}
+
+// Get the location of a seed
+fn map_seed(seed: u64, maps: &Vec<Map>) -> u64 {
+    let mut mapped_value = seed;
+    for map in maps {
+        mapped_value = map.map(mapped_value);
+    }
+    mapped_value
+}
+
+// Get the seed of a location
+fn map_location(location: u64, maps: &[Map]) -> u64 {
+    let mut mapped_value = location;
+
+    let maps_reverse = maps.iter().rev().collect::<Vec<&Map>>();
+
+    for map in maps_reverse {
+        mapped_value = map.map_reverse(mapped_value);
+    }
+    mapped_value
+}
+
+// Returns a vector of ranges of valid seeds. The ranges are tuples of (start, end)
+fn get_seeds_as_ranges(input: &str) -> Vec<(u64, u64)> {
+    let seed_str = input
+        .lines()
+        .next()
+        .unwrap()
+        .strip_prefix("seeds: ")
+        .unwrap();
+
+    let seed_values: Vec<u64> = seed_str
+        .split_ascii_whitespace()
+        .map(|s| s.parse().unwrap())
         .collect();
 
-    println!("smallest location: {}", locations.iter().min().unwrap());
+    let mut ranges: Vec<(u64, u64)> = Vec::new();
+    for chunk in seed_values.chunks(2) {
+        let seedrange_pair = match chunk.len() {
+            2 => (chunk[0], chunk[1]),
+            _ => panic!("Invalid number of seed values"),
+        };
+
+        let range_start = seedrange_pair.0;
+        let range_length = seedrange_pair.1;
+
+        ranges.push((range_start, range_start + range_length - 1));
+    }
+
+    ranges
 }
 
 fn get_seeds(input: &str) -> Vec<u64> {
@@ -82,6 +147,25 @@ impl From<&str> for Range {
     }
 }
 
+struct RangeIterator<'a> {
+    range: &'a Range,
+    current_value: u64,
+}
+
+impl<'a> Iterator for RangeIterator<'a> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_value < self.range.range_length {
+            let value = self.range.destination_start + self.current_value;
+            self.current_value += 1;
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Map {
     ranges: Vec<Range>,
@@ -97,6 +181,19 @@ impl Map {
             }
         }
         dest
+    }
+
+    fn map_reverse(&self, destination: u64) -> u64 {
+        let mut source = destination;
+        for range in &self.ranges {
+            if destination >= range.destination_start
+                && destination < range.destination_start + range.range_length
+            {
+                source = range.source_start + (destination - range.destination_start);
+                break;
+            }
+        }
+        source
     }
 }
 
@@ -160,5 +257,14 @@ mod tests {
         assert_eq!(range.destination_start, 1);
         assert_eq!(range.source_start, 2);
         assert_eq!(range.range_length, 3);
+    }
+
+    #[test]
+    fn test_get_seeds_as_ranges() {
+        let ranges = get_seeds_as_ranges("seeds: 1 2 3 4");
+        assert_eq!(ranges, vec![(1, 2), (3, 6),]);
+
+        let ranges = get_seeds_as_ranges("seeds: 1 2 3 4 5 6");
+        assert_eq!(ranges, vec![(1, 2), (3, 6), (5, 10),]);
     }
 }
