@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::pedantic)]
 
 const INPUT: &str = include_str!("input.txt");
-const ACCELERATION: u32 = 1;
+const ACCELERATION: u64 = 1;
 
 fn main() {
     let races = parse_races(INPUT);
@@ -12,6 +12,35 @@ fn main() {
     }
 
     println!("Product of ways to win: {product_of_ways_to_win}");
+
+    let race = parse_race(INPUT);
+    println!("Ways to win: {}", nr_of_ways_to_win(&race));
+}
+
+fn parse_race(input: &str) -> Race {
+    let lines: Vec<&str> = input.lines().collect();
+    assert!(lines.len() == 2, "Invalid input, expected 2 lines");
+
+    Race {
+        time: parse_line_as_digits(lines[0].strip_prefix("Time:").unwrap()),
+        distance: parse_line_as_digits(lines[1].strip_prefix("Distance:").unwrap()),
+    }
+}
+
+fn parse_line_as_digits(input: &str) -> u64 {
+    let mut number = 0;
+    let mut current_digit = 0;
+    for c in input.chars().rev() {
+        if c.is_ascii_whitespace() {
+            continue;
+        }
+        number += c
+            .to_digit(10)
+            .expect(format!("char {c} not a digit").as_str()) as u64
+            * 10_u64.pow(current_digit);
+        current_digit += 1;
+    }
+    number
 }
 
 fn parse_races(input: &str) -> Vec<Race> {
@@ -34,23 +63,23 @@ fn parse_races(input: &str) -> Vec<Race> {
     .collect()
 }
 
-fn parse_times(input: &str) -> Vec<u32> {
+fn parse_times(input: &str) -> Vec<u64> {
     let input = input.strip_prefix("Time:").unwrap().trim();
 
-    let mut times: Vec<u32> = Vec::new();
+    let mut times: Vec<u64> = Vec::new();
     for line in input.split_whitespace() {
-        let time: u32 = line.parse().unwrap();
+        let time: u64 = line.parse().unwrap();
         times.push(time);
     }
     times
 }
 
-fn parse_distances(input: &str) -> Vec<u32> {
+fn parse_distances(input: &str) -> Vec<u64> {
     let input = input.strip_prefix("Distance:").unwrap().trim();
 
-    let mut distances: Vec<u32> = Vec::new();
+    let mut distances: Vec<u64> = Vec::new();
     for line in input.split_whitespace() {
-        let distance: u32 = line.parse().unwrap();
+        let distance: u64 = line.parse().unwrap();
         distances.push(distance);
     }
     distances
@@ -58,24 +87,26 @@ fn parse_distances(input: &str) -> Vec<u32> {
 
 #[derive(Debug)]
 struct Race {
-    time: u32,
-    distance: u32,
+    time: u64,
+    distance: u64,
 }
 
-fn nr_of_ways_to_win(race: &Race) -> u32 {
+fn nr_of_ways_to_win(race: &Race) -> u64 {
     let optimal_time = time_for_max_distance(race.time);
 
-    let mut time_to_test = optimal_time;
-    // Based on the question i assume that the optiomal time will always win
-    let mut ways_to_win = 1;
+    let mut lower_bound = optimal_time;
+    let mut upper_bound = race.time;
 
-    // We start at the optimal time and go up until we find the maximum time to hold the acceleration button
+    // We start at the optimal time and do a binary search towards the max time to find the max winning value
+    let max_winning_value;
     loop {
-        time_to_test += 1;
+        let time_to_test = (lower_bound + upper_bound) / 2;
 
         // We have found the maximum time to hold the acceleration button
         if distance_traveled(race.time, time_to_test) <= race.distance {
-            break;
+            upper_bound = time_to_test;
+        } else {
+            lower_bound = time_to_test;
         }
 
         println!(
@@ -83,17 +114,25 @@ fn nr_of_ways_to_win(race: &Race) -> u32 {
             time_to_test,
             distance_traveled(race.time, time_to_test)
         );
-        ways_to_win += 1;
+
+        if upper_bound - lower_bound <= 1 {
+            max_winning_value = upper_bound;
+            break;
+        }
     }
 
-    time_to_test = optimal_time;
+    lower_bound = 0;
+    upper_bound = optimal_time;
     // Now we go down until we find the minumum time to hold the acceleration button
+    let min_winning_value;
     loop {
-        time_to_test -= 1;
+        let time_to_test = (lower_bound + upper_bound) / 2;
 
         // We have found the maximum time to hold the acceleration button
         if distance_traveled(race.time, time_to_test) <= race.distance {
-            break;
+            lower_bound = time_to_test;
+        } else {
+            upper_bound = time_to_test;
         }
 
         println!(
@@ -101,19 +140,23 @@ fn nr_of_ways_to_win(race: &Race) -> u32 {
             time_to_test,
             distance_traveled(race.time, time_to_test)
         );
-        ways_to_win += 1;
+
+        if upper_bound - lower_bound <= 1 {
+            min_winning_value = upper_bound;
+            break;
+        }
     }
 
-    ways_to_win
+    max_winning_value - min_winning_value
 }
 
 // This is the time that the acceleration button should be held down for it to travel the maximum distance
 // This is carculated using the derivative of the distance function to get the maximum of the distance function
-fn time_for_max_distance(max_time: u32) -> u32 {
+fn time_for_max_distance(max_time: u64) -> u64 {
     max_time / 2
 }
 
-fn distance_traveled(max_time: u32, time_held: u32) -> u32 {
+fn distance_traveled(max_time: u64, time_held: u64) -> u64 {
     let speed = time_held * ACCELERATION;
     let time_left = max_time - time_held;
     speed * time_left
