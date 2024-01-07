@@ -37,7 +37,7 @@ struct Hand {
 impl Hand {
     fn parse(s: &str) -> Self {
         let parts: Vec<&str> = s.split_whitespace().collect();
-        assert!(parts.len() == 2, "Invalid hand: {s}");
+        assert!(parts.len() == 2, "Invalid format for hand: {s}");
 
         let cards = parse_cards(parts[0]);
         let bid = parts[1].parse().unwrap();
@@ -61,12 +61,23 @@ impl Hand {
 
 fn parse_type(cards: &[u32]) -> Type {
     let mut counts = [0; 15];
+    let mut jokers = 0;
     for card in cards {
+        if *card == 0 {
+            jokers += 1;
+            continue;
+        }
         counts[*card as usize] += 1;
     }
 
-    let mut counts = counts.iter().filter(|&&c| c > 0).collect::<Vec<_>>();
+    let mut counts = counts.into_iter().filter(|&c| c > 0).collect::<Vec<_>>();
     counts.sort_by(|a, b| b.cmp(a));
+
+    if jokers == 5 {
+        return Type::FiveOfAKind;
+    }
+
+    counts[0] += jokers;
 
     match counts.as_slice() {
         [1, 1, 1, 1, 1] => Type::HighCard,
@@ -84,7 +95,7 @@ fn parse_cards(s: &str) -> Vec<u32> {
     s.chars()
         .map(|s| match s {
             'T' => 10,
-            'J' => 11,
+            'J' => 0,
             'Q' => 12,
             'K' => 13,
             'A' => 14,
@@ -105,7 +116,7 @@ mod tests {
 
         let input = "123456789TJQKA";
         let hand = parse_cards(input);
-        assert_eq!(hand, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+        assert_eq!(hand, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 12, 13, 14]);
     }
 
     #[test]
@@ -140,7 +151,7 @@ mod tests {
 
         let input = "22KJA";
         let hand = parse_cards(input);
-        assert_eq!(parse_type(&hand), Type::OnePair);
+        assert_eq!(parse_type(&hand), Type::ThreeOfAKind);
     }
 
     #[test]
