@@ -4,6 +4,7 @@ mod tree;
 
 use crate::tree::{Node, NodeRef};
 use core::panic;
+use num::integer::lcm;
 use scan_fmt::scan_fmt_some;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,38 +14,40 @@ const INPUT: &str = include_str!("input.txt");
 
 fn main() {
     let instructions = parse_instructions(INPUT);
-    println!("Instructions: {:?}", instructions);
+    // println!("Instructions: {instructions:?}");
 
-    let mut current_instruction: usize = 0;
-    let mut steps: usize = 0;
-    let mut current_node = parse_tree(INPUT);
-    loop {
-        if current_instruction >= instructions.len() {
-            current_instruction = 0;
-        }
+    let trees = parse_trees(INPUT);
 
-        let instruction = instructions[current_instruction];
+    let loop_sizes: Vec<_> = trees
+        .iter()
+        .map(|node| get_loop_size(node, instructions.clone()))
+        .collect();
 
-        match instruction {
-            Instruction::Left => {
-                let next = Rc::clone(&current_node.borrow().left.as_ref().unwrap());
-                current_node = next;
-            }
-            Instruction::Right => {
-                let next = Rc::clone(&current_node.borrow().right.as_ref().unwrap());
-                current_node = next;
-            }
-        }
+    println!("Loop sizes: {:?}", loop_sizes);
 
-        current_instruction += 1;
+    let collective_loop_size = loop_sizes.iter().fold(1, |acc, x| lcm(acc, *x));
+
+    println!("Step count where all nodes end in Z: {collective_loop_size}");
+}
+
+fn get_loop_size(node: &NodeRef<String>, instructions: Vec<Instruction>) -> usize {
+    let mut current_node = Rc::clone(node);
+    let mut steps = 0;
+    while !RefCell::borrow(&current_node).val.ends_with('Z') {
+        let current_instruction = instructions[steps % instructions.len()];
+        current_node = step_through_node(&current_node, current_instruction);
         steps += 1;
+    }
+    steps
+}
 
-        println!("Current node: {:?}", current_node.borrow());
-
-        if current_node.borrow().val == "ZZZ" {
-            println!("Found ZZZ in {steps} steps");
-            break;
-        }
+fn step_through_node(
+    current_node: &NodeRef<String>,
+    current_instruction: Instruction,
+) -> NodeRef<String> {
+    match current_instruction {
+        Instruction::Left => Rc::clone(current_node.borrow().left.as_ref().unwrap()),
+        Instruction::Right => Rc::clone(current_node.borrow().right.as_ref().unwrap()),
     }
 }
 
@@ -58,7 +61,7 @@ enum Instruction {
 fn parse_instructions(input: &str) -> Vec<Instruction> {
     input
         .lines()
-        .nth(0)
+        .next()
         .unwrap()
         .chars()
         .map(|c| match c {
@@ -71,15 +74,15 @@ fn parse_instructions(input: &str) -> Vec<Instruction> {
 
 fn parse_line(line: &str) -> (String, String, String) {
     match scan_fmt_some!(line, "{} = ({}, {})", String, String, String) {
-        (Some(node), Some(left), Some(right)) => return (node, left, right),
+        (Some(node), Some(left), Some(right)) => (node, left, right),
         _ => panic!("Invalid line: {}", line),
     }
 }
 
-fn parse_tree(input: &str) -> NodeRef<String> {
+fn parse_trees(input: &str) -> Vec<NodeRef<String>> {
     let mut hash_map: HashMap<String, NodeRef<String>> = HashMap::new();
-    let iter = input.lines().skip(2);
-    for line in iter {
+    let mut start_nodes = Vec::new();
+    for line in input.lines().skip(2) {
         let (node_name, left_name, right_name) = parse_line(line);
 
         hash_map
@@ -104,9 +107,16 @@ fn parse_tree(input: &str) -> NodeRef<String> {
         if node_name != right_name {
             RefCell::borrow_mut(node).set_right(Rc::clone(right));
         }
+
+        if node_name.ends_with('A') {
+            start_nodes.push(node_name);
+        }
     }
-    let root = hash_map.get("AAA".into()).unwrap();
-    Rc::clone(root)
+
+    start_nodes
+        .iter()
+        .map(|node_name| Rc::clone(hash_map.get(node_name).unwrap()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -142,8 +152,8 @@ mod tests {
     #[test]
     fn test_parse_tree() {
         let input = "instructions\n\nAAA = (B, C)\nB = (D, E)\n";
-        let root = parse_tree(input);
-        let root = RefCell::borrow(&root);
+        let trees = parse_trees(input);
+        let root = RefCell::borrow(&trees[0]);
         assert_eq!(root.val, "AAA");
         let left = RefCell::borrow(&root.left.as_ref().unwrap());
         assert_eq!(left.val, "B");
@@ -158,8 +168,8 @@ mod tests {
         assert!(right.left.is_none());
 
         let input = "instructions\n\nAAA = (BBB, CCC)\nBBB = (BBB, BBB)";
-        let root = parse_tree(input);
-        let root = RefCell::borrow(&root);
+        let trees = parse_trees(input);
+        let root = RefCell::borrow(&trees[0]);
         assert_eq!(root.val, "AAA");
         let left = RefCell::borrow(&root.left.as_ref().unwrap());
         assert_eq!(left.val, "BBB");
